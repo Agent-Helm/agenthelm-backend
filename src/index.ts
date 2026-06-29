@@ -4,6 +4,7 @@ import { config, warnMissingConfig } from "./config.js";
 import { healthRouter } from "./routes/health.js";
 import { balancesRouter } from "./routes/balances.js";
 import { sellabilityRouter } from "./routes/sellability.js";
+import { simulateRouter } from "./routes/simulate.js";
 import { rpcRouter } from "./routes/rpc.js";
 
 warnMissingConfig();
@@ -21,6 +22,7 @@ app.use(express.json());
 app.use("/", healthRouter);
 app.use("/", balancesRouter);
 app.use("/", sellabilityRouter);
+app.use("/", simulateRouter);
 app.use("/", rpcRouter);
 
 // 404 fallback.
