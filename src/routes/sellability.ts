@@ -161,7 +161,6 @@ async function scanOne(
         findings: [],
         sellTaxBips: null,
         buyTaxBips: null,
-        honeypotChecked: true,
         goplusChecked: true,
       }
     : await checkTokenSecurity(chainId, token.tokenAddress);
@@ -185,7 +184,12 @@ async function scanOne(
 
   const blockingFinding = security.findings.find((finding) => finding.severity === "block");
   const expectedOutWei = BigInt(quote.amountOutRaw);
-  const gasUnits = isWeth ? GAS_BY_ROUTE.weth : GAS_BY_ROUTE[quote.version];
+  let gasUnits = isWeth ? GAS_BY_ROUTE.weth : GAS_BY_ROUTE[quote.version];
+  // Each extra V2 hop (e.g. token->VIRTUAL->WETH) adds a swap; charge for it so
+  // net-of-gas math stays honest on multi-hop routes.
+  if (quote.version === "v2" && quote.route.length > 2) {
+    gasUnits += (quote.route.length - 2) * 60_000;
+  }
   const gasWei = gasPriceWei * BigInt(gasUnits);
   const feeWei = (expectedOutWei * BigInt(feeState.bips)) / 10_000n;
   const netWei = expectedOutWei - feeWei - gasWei;
@@ -210,9 +214,9 @@ async function scanOne(
     buyTaxBips: security.buyTaxBips,
     securityFindings: security.findings,
     simulation: {
-      status: security.honeypotChecked ? "external_check" : "not_run",
-      note: security.honeypotChecked
-        ? "honeypot.is external buy/sell simulation checked; DustExecutor simulation runs immediately before execution."
+      status: security.goplusChecked ? "external_check" : "not_run",
+      note: security.goplusChecked
+        ? "GoPlus external security checks passed; DustExecutor simulation runs immediately before execution."
         : "DustExecutor simulation runs immediately before execution.",
     },
   } satisfies Partial<ScanResult>;

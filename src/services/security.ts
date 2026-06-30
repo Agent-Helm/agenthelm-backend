@@ -1,7 +1,7 @@
 import { config } from "../config.js";
 
 export type SecurityFinding = {
-  source: "goplus" | "honeypot";
+  source: "goplus";
   severity: "info" | "warning" | "block";
   message: string;
 };
@@ -10,7 +10,6 @@ export type TokenSecurityResult = {
   findings: SecurityFinding[];
   sellTaxBips: number | null;
   buyTaxBips: number | null;
-  honeypotChecked: boolean;
   goplusChecked: boolean;
 };
 
@@ -32,28 +31,6 @@ type GoPlusResponse = {
   >;
 };
 
-type HoneypotResponse = {
-  honeypotResult?: {
-    isHoneypot?: boolean;
-  };
-  simulationResult?: {
-    buyTax?: number;
-    sellTax?: number;
-  };
-  summary?: {
-    risk?: string;
-    flags?: Array<
-      | string
-      | {
-          flag?: string;
-          description?: string;
-          severity?: string;
-          severityIndex?: number;
-        }
-    >;
-  };
-};
-
 export function percentToBips(value: string | number | undefined): number | null {
   if (value === undefined || value === "") return null;
   const n = typeof value === "number" ? value : Number(value);
@@ -65,38 +42,11 @@ function isOne(value: string | undefined): boolean {
   return value === "1";
 }
 
-function formatProviderStatus(source: SecurityFinding["source"], status: number): string {
+function formatProviderStatus(status: number): string {
   if (status === 401 || status === 403) {
-    return `${source === "goplus" ? "GoPlus" : "honeypot.is"} auth/rate limit (${status})`;
+    return `GoPlus auth/rate limit (${status})`;
   }
-  return `${source === "goplus" ? "GoPlus" : "honeypot.is"} unavailable (${status})`;
-}
-
-export function honeypotFlagToFinding(
-  flag: NonNullable<NonNullable<HoneypotResponse["summary"]>["flags"]>[number],
-  summaryRisk: string | undefined,
-): SecurityFinding {
-  if (typeof flag === "string") {
-    return {
-      source: "honeypot",
-      severity: summaryRisk === "high" ? "block" : "warning",
-      message: flag,
-    };
-  }
-
-  const label = flag.flag?.trim() || "Honeypot warning";
-  const description = flag.description?.trim();
-  const providerSeverity = flag.severity?.toLowerCase();
-  const severity =
-    summaryRisk === "high" || providerSeverity === "high" || providerSeverity === "critical"
-      ? "block"
-      : "warning";
-
-  return {
-    source: "honeypot",
-    severity,
-    message: description && description !== label ? `${label}: ${description}` : label,
-  };
+  return `GoPlus unavailable (${status})`;
 }
 
 async function fetchGoPlus(
@@ -118,7 +68,7 @@ async function fetchGoPlus(
         {
           source: "goplus",
           severity: "warning",
-          message: formatProviderStatus("goplus", response.status),
+          message: formatProviderStatus(response.status),
         },
       ],
     };
@@ -185,63 +135,16 @@ async function fetchGoPlus(
   };
 }
 
-async function fetchHoneypot(
-  chainId: number,
-  tokenAddress: `0x${string}`,
-): Promise<Partial<TokenSecurityResult>> {
-  const url = new URL("https://api.honeypot.is/v2/IsHoneypot");
-  url.searchParams.set("address", tokenAddress);
-  url.searchParams.set("chainID", String(chainId));
-
-  const response = await fetch(url);
-  if (!response.ok) {
-    return {
-      honeypotChecked: false,
-      findings: [
-        {
-          source: "honeypot",
-          severity: "warning",
-          message: formatProviderStatus("honeypot", response.status),
-        },
-      ],
-    };
-  }
-
-  const body = (await response.json()) as HoneypotResponse;
-  const findings: SecurityFinding[] = [];
-  if (body.honeypotResult?.isHoneypot) {
-    findings.push({
-      source: "honeypot",
-      severity: "block",
-      message: "honeypot.is flags token as honeypot",
-    });
-  }
-  for (const flag of body.summary?.flags ?? []) {
-    findings.push(honeypotFlagToFinding(flag, body.summary?.risk));
-  }
-
-  return {
-    honeypotChecked: true,
-    sellTaxBips: percentToBips(body.simulationResult?.sellTax),
-    buyTaxBips: percentToBips(body.simulationResult?.buyTax),
-    findings,
-  };
-}
-
 export async function checkTokenSecurity(
   chainId: number,
   tokenAddress: `0x${string}`,
 ): Promise<TokenSecurityResult> {
-  const [goplus, honeypot] = await Promise.all([
-    fetchGoPlus(chainId, tokenAddress),
-    fetchHoneypot(chainId, tokenAddress),
-  ]);
+  const goplus = await fetchGoPlus(chainId, tokenAddress);
 
   return {
-    findings: [...(goplus.findings ?? []), ...(honeypot.findings ?? [])],
-    sellTaxBips: honeypot.sellTaxBips ?? goplus.sellTaxBips ?? null,
-    buyTaxBips: honeypot.buyTaxBips ?? goplus.buyTaxBips ?? null,
-    honeypotChecked: honeypot.honeypotChecked ?? false,
+    findings: goplus.findings ?? [],
+    sellTaxBips: goplus.sellTaxBips ?? null,
+    buyTaxBips: goplus.buyTaxBips ?? null,
     goplusChecked: goplus.goplusChecked ?? false,
   };
 }
