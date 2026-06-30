@@ -16,6 +16,14 @@ type DefiLlamaResponse = {
   >;
 };
 
+type AlchemyPricesResponse = {
+  data?: {
+    symbol?: string;
+    prices?: { currency?: string; value?: string }[];
+    error?: unknown;
+  }[];
+};
+
 type CoinGeckoTokenPrice = Record<
   string,
   {
@@ -47,11 +55,33 @@ async function fetchJson<T>(
   }
 }
 
-export async function getEthUsd(): Promise<number | null> {
+export function parseAlchemyEthUsd(body: AlchemyPricesResponse | null): number | null {
+  const value = body?.data
+    ?.find((entry) => entry.symbol === "ETH")
+    ?.prices?.find((price) => price.currency === "usd")?.value;
+  if (value == null) return null;
+  const price = Number(value);
+  return Number.isFinite(price) ? price : null;
+}
+
+async function fetchEthUsdFromAlchemy(): Promise<number | null> {
+  if (!config.alchemyApiKey) return null;
+  const url = `https://api.g.alchemy.com/prices/v1/${config.alchemyApiKey}/tokens/by-symbol?symbols=ETH`;
+  return parseAlchemyEthUsd(await fetchJson<AlchemyPricesResponse>(url));
+}
+
+async function fetchEthUsdFromDefiLlama(): Promise<number | null> {
   const url = "https://coins.llama.fi/prices/current/coingecko:ethereum";
   const body = await fetchJson<DefiLlamaResponse>(url);
   const price = body?.coins?.["coingecko:ethereum"]?.price;
   return typeof price === "number" && Number.isFinite(price) ? price : null;
+}
+
+export async function getEthUsd(): Promise<number | null> {
+  // Prefer Alchemy Prices (consolidated with the RPC/Token API on one paid plan,
+  // SLA-backed). Fall back to DeFiLlama so ETH/USD still resolves if Alchemy is
+  // unavailable or the key is unset.
+  return (await fetchEthUsdFromAlchemy()) ?? (await fetchEthUsdFromDefiLlama());
 }
 
 export async function fetchMarketPrices(
