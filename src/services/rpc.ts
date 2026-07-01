@@ -63,6 +63,29 @@ export function ethCall(to: `0x${string}`, data: `0x${string}`) {
   return rpc<`0x${string}`>("eth_call", [{ to, data }, "latest"]);
 }
 
+export type RpcLog = {
+  address: `0x${string}`;
+  topics: `0x${string}`[];
+  data: `0x${string}`;
+  blockNumber: `0x${string}`;
+};
+
+export function ethGetLogs(filter: {
+  address: `0x${string}`;
+  topics: (`0x${string}` | null)[];
+  fromBlock?: string;
+  toBlock?: string;
+}) {
+  return rpc<RpcLog[]>("eth_getLogs", [
+    {
+      address: filter.address,
+      topics: filter.topics,
+      fromBlock: filter.fromBlock ?? "earliest",
+      toBlock: filter.toBlock ?? "latest",
+    },
+  ]);
+}
+
 export function ethGetCode(address: `0x${string}`) {
   return rpc<`0x${string}`>("eth_getCode", [address, "latest"]);
 }

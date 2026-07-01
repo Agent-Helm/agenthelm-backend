@@ -41,9 +41,13 @@ export async function getExecutorFeeState(
   const code = await ethGetCode(dustExecutor);
   if (code === "0x") return null;
 
+  // Contract now charges a mode-dependent fee: ethFeeBps (10%) when the user
+  // takes ETH, helmFeeBps (5%) when they take HELM. We read ethFeeBps as the
+  // conservative (higher) estimate for net-out quoting; pass an explicit mode
+  // through to refine this once the frontend exposes the HELM option.
   const [collectorResult, feeBpsResult] = await Promise.all([
-    ethCall(dustExecutor, selector("feeCollector()")),
-    ethCall(dustExecutor, selector("feeBps()")),
+    ethCall(dustExecutor, selector("ownerWallet()")),
+    ethCall(dustExecutor, selector("ethFeeBps()")),
   ]);
   return decodeExecutorFeeStateResults(collectorResult, feeBpsResult);
 }
